@@ -1,0 +1,10 @@
+# Ignore PyCharm project files
+.idea/
+
+# Ignore Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Optional: Add other common ignores if you anticipate them
+venv/         # Ignore the virtual environment folder itself
+__pycache__/  # Ignore Python cache files
+*.pyc         # Ignore compiled Python files
