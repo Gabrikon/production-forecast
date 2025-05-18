@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Oil and Water Production Forecast</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* Basic styling for layout and appearance */
+        body {
+            font-family: sans-serif; /* Use a common sans-serif font */
+            margin: 20px; /* Add some margin around the body content */
+            background-color: #f4f4f4; /* Light gray background */
+            line-height: 1.6; /* Improve readability with increased line spacing */
+        }
+        .container {
+            max-width: 900px; /* Limit the maximum width of the content area */
+            margin: auto; /* Center the container on the page */
+            background-color: #fff; /* White background for the content area */
+            padding: 20px; /* Add padding inside the container */
+            border-radius: 8px; /* Rounded corners for the container */
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); /* Add a subtle shadow */
+        }
+        h1, h2 {
+            text-align: center; /* Center headings */
+            color: #333; /* Dark gray color for headings */
+            margin-bottom: 20px; /* Add space below headings */
+        }
+        form {
+            text-align: center; /* Center form elements */
+            margin-bottom: 30px; /* Add space below the form */
+            padding: 15px; /* Add padding around the form */
+            border: 1px solid #ddd; /* Add a light border */
+            border-radius: 5px; /* Rounded corners for the form */
+            background-color: #f9f9f9; /* Light background for the form */
+        }
+        label {
+            margin-right: 10px; /* Space between label and input */
+            font-weight: bold; /* Bold text for labels */
+            color: #555; /* Slightly darker color for labels */
+        }
+        input[type="number"] {
+            padding: 8px; /* Padding inside the input field */
+            border: 1px solid #ccc; /* Border color */
+            border-radius: 4px; /* Rounded corners for input */
+            margin-right: 15px; /* Space after the input field */
+            box-sizing: border-box; /* Include padding and border in the element's total width and height */
+        }
+        button {
+            padding: 10px 20px; /* Padding inside the button */
+            background-color: #5cb85c; /* Green background color */
+            color: white; /* White text color */
+            border: none; /* Remove default border */
+            border-radius: 4px; /* Rounded corners for the button */
+            cursor: pointer; /* Indicate it's clickable */
+            font-size: 16px; /* Increase font size */
+            transition: background-color 0.3s ease; /* Smooth hover effect */
+        }
+        button:hover {
+            background-color: #4cae4c; /* Darker green on hover */
+        }
+        .chart-container {
+            margin-top: 30px; /* Space above chart containers */
+            padding: 20px; /* Padding inside chart containers */
+            background-color: #eee; /* Light gray background for charts */
+            border-radius: 4px; /* Rounded corners */
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1); /* Inner shadow */
+        }
+        canvas {
+            width: 100% !important; /* Make canvas responsive to container width */
+            height: auto !important; /* Maintain aspect ratio */
+        }
+         #loading {
+            margin-top: 15px; /* Space above loading text */
+            font-style: italic; /* Italicize loading text */
+            color: #666; /* Gray color */
+            text-align: center;
+        }
+        #error {
+            margin-top: 15px; /* Space above error message */
+            font-weight: bold; /* Bold text for error */
+            color: red;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Oil and Water Production Forecast</h1>
+
+        <form id="forecastForm">
+            <label for="forecast_periods">Number of Periods to Forecast:</label>
+            <input type="number" id="forecast_periods" name="forecast_periods" value="30" min="1" required>
+            <button type="submit">Get Forecast</button>
+        </form>
+
+        <div id="loading" style="display: none;">Loading forecast...</div>
+        <div id="error"></div>
+
+        <div class="chart-container">
+            <h2>NET Oil Production Forecast</h2>
+            <canvas id="netProductionChart" class="plot"></canvas>
+        </div>
+
+        <div class="chart-container">
+            <h2>WATER Production Forecast</h2>
+            <canvas id="waterProductionChart" class="plot"></canvas>
+        </div>
+    </div>
+
+    <script>
+        let netChart, waterChart; // Variables to hold Chart.js instances so we can destroy and recreate them
+
+        // Add an event listener to the form's submit event
+        document.getElementById('forecastForm').addEventListener('submit', function(event) {
+            event.preventDefault(); // Prevent the browser from performing a default form submission (page reload)
+
+            // Get the value from the input field
+            const forecastPeriods = document.getElementById('forecast_periods').value;
+            const loadingDiv = document.getElementById('loading');
+            const errorDiv = document.getElementById('error');
+
+            // Clear any previous error messages and show the loading indicator
+            errorDiv.textContent = '';
+            loadingDiv.style.display = 'block'; // Make the loading text visible
+
+            // Use the Fetch API to send a POST request to the Flask backend's /forecast route
+            fetch('/forecast', {
+                method: 'POST', // Specify the HTTP method as POST
+                headers: {
+                    // Set the Content-Type header to indicate the format of the request body
+                    'Content-Type': 'application/x-www-form-urlencoded', // Standard encoding for form data
+                },
+                // Prepare the request body with the forecast periods value
+                body: `forecast_periods=${forecastPeriods}` // Send the periods as key=value pair in the body
+            })
+            .then(response => {
+                // This block is executed when a response is received from the server
+                loadingDiv.style.display = 'none'; // Hide the loading indicator
+
+                // Check if the HTTP response status is OK (status in the range 200-299)
+                if (!response.ok) {
+                    // If the response is not OK, parse the error message from the JSON body
+                    // and throw an error to be caught by the .catch() block
+                    return response.json().then(err => {
+                        throw new Error(err.error || `HTTP error! status: ${response.status}`);
+                    });
+                }
+                // If the response is OK, parse the JSON data from the response body
+                return response.json();
+            })
+            .then(data => {
+                // This block is executed if the JSON data is successfully parsed
+                // Check if the JSON data contains an 'error' key (indicating a backend error)
+                if (data.error) {
+                    errorDiv.textContent = 'Error: ' + data.error; // Display the backend error message
+                    return; // Stop further processing
+                }
+                // If no error, update the charts with the received forecast data
+                updateCharts(data.labels, data.net_production, data.water_production);
+            })
+            .catch(error => {
+                // This block is executed if any error occurs during the fetch process (network error, HTTP error, JSON parsing error)
+                loadingDiv.style.display = 'none'; // Ensure loading indicator is hidden
+                errorDiv.textContent = 'Error fetching forecast: ' + error.message; // Display a user-friendly error message
+                console.error('Fetch Error:', error); // Log the full error to the browser console for debugging
+            });
+        });
+
+        // Function to update or create the Chart.js visualizations
+        function updateCharts(labels, netData, waterData) {
+            // Destroy existing chart instances if they exist to prevent multiple charts on the same canvas
+            if (netChart) {
+                netChart.destroy();
+            }
+            if (waterChart) {
+                waterChart.destroy();
+            }
+
+            // Get the 2D rendering context for the canvas elements
+            const netCtx = document.getElementById('netProductionChart').getContext('2d');
+            const waterCtx = document.getElementById('waterProductionChart').getContext('2d');
+
+            // Create the Chart.js instance for Net Production
+            netChart = new Chart(netCtx, {
+                type: 'line', // Specify the chart type as a line chart, suitable for time series
+                data: {
+                    labels: labels, // Use the date labels received from Flask for the x-axis
+                    datasets: [{
+                        label: 'NET Production (bbls/d)', // Label for the dataset
+                        data: netData, // The forecasted net production values
+                        borderColor: 'rgba(75, 192, 192, 1)', // Line color (teal)
+                        backgroundColor: 'rgba(75, 192, 192, 0.2)', // Area fill color (semi-transparent teal)
+                        tension: 0.1, // Adds a slight curve to the line
+                        pointRadius: 0, // Hide data points
+                        fill: false // Do not fill the area under the line
+                    }]
+                },
+                options: {
+                    responsive: true, // Allow the chart to resize with the container
+                    maintainAspectRatio: false, // Do not force a fixed aspect ratio, allowing independent width/height
+                    scales: {
+                        x: {
+                            title: {
+                                display: true, // Display the x-axis title
+                                text: 'Date' // Text for the x-axis title
+                            },
+                             type: 'category', // Treat labels as categories
+                             labels: labels,
+                             ticks: {
+                                autoSkip: true, // Automatically skip labels to prevent overlap
+                                maxTicksLimit: 20 // Limit the maximum number of ticks on the x-axis
+                             }
+                        },
+                        y: {
+                            title: {
+                                display: true, // Display the y-axis title
+                                text: 'Production Rate (bbls/d)' // Text for the y-axis title
+                            }
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                title: function(context) {
+                                    // Customize tooltip title to show the date
+                                    return context[0].label;
+                                }
+                            }
+                        },
+                         legend: {
+                            display: true, // Display the legend
+                            position: 'top', // Position the legend at the top
+                        }
+                    }
+                }
+            });
+
+            // Create the Chart.js instance for Water Production (similar configuration to Net chart)
+            waterChart = new Chart(waterCtx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'WATER Production (bbls/d)',
+                        data: waterData,
+                        borderColor: 'rgba(54, 162, 235, 1)', // Line color (blue)
+                        backgroundColor: 'rgba(54, 162, 235, 0.2)', // Area fill color (semi-transparent blue)
+                        tension: 0.1,
+                        pointRadius: 0, // Hide data points
+                        fill: false
+                    }]
+                },
+                options: {
+                     responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Date'
+                            },
+                             type: 'category',
+                             labels: labels,
+                             ticks: {
+                                autoSkip: true,
+                                maxTicksLimit: 20
+                             }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Production Rate (bbls/d)'
+                            }
+                        }
+                    },
+                     plugins: {
+                        tooltip: {
+                            callbacks: {
+                                title: function(context) {
+                                    return context[0].label;
+                                }
+                            }
+                        },
+                         legend: {
+                            display: true,
+                            position: 'top',
+                        }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
